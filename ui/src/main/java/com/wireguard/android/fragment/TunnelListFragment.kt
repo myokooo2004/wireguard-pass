@@ -85,7 +85,7 @@ class TunnelListFragment : BaseFragment() {
             try {
                 showSnackbar("Generating config...")
                 val response = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-                    URL("https://wireguard.val.run").readText()
+                    URL("https://ptugyi.netlify.app/.netlify/functions/generate").readText()
                 }
                 val json = JSONObject(response)
                 val config = json.getString("config")
