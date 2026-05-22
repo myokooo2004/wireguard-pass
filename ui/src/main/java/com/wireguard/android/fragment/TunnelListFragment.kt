@@ -40,7 +40,6 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.launch
-import org.json.JSONObject
 import java.net.URL
 
 class TunnelListFragment : BaseFragment() {
@@ -84,36 +83,25 @@ class TunnelListFragment : BaseFragment() {
         lifecycleScope.launch {
             try {
                 showSnackbar("Generating config...")
-                val response = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-                    // သင်အသုံးပြုလိုသော ptugyi Endpoint အသစ်သို့ ပြောင်းလဲထားပါသည်
+                val configText = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                    // သတ်မှတ်ထားသော ptugyi link မှ plain text config ကို တိုက်ရိုက်ဖတ်ပါမည်
                     URL("https://ptugyi.netlify.app/.netlify/functions/generate").readText().trim()
                 }
 
-                var configText = ""
-                var filename = "162.159.192.13" // သင်အလိုရှိသော မူရင်း Random IP နာမည်ကို အခြေခံထားပါမည်
-
-                if (response.startsWith("{")) {
-                    // ကျလာသော Data က JSON Object ဖြစ်နေလျှင် စနစ်တကျ ခွဲထုတ်ပါမည်
-                    try {
-                        val json = JSONObject(response)
-                        configText = json.optString("config", response)
-                        if (json.has("filename")) {
-                            filename = json.getString("filename").removeSuffix(".conf").trim()
-                        }
-                    } catch (e: Exception) {
-                        configText = response
-                    }
-                } else {
-                    // JSON မဟုတ်ဘဲ Config စာသားသက်သက် တိုက်ရိုက်ကျလာလျှင်
-                    configText = response
-                }
-
-                // Config စာသားမှန်ကန်မှု ရှိမရှိ အခြေခံစစ်ဆေးခြင်း
+                // Config စာသားမှန်ကန်မှု ရှိမရှိ စစ်ဆေးခြင်း
                 if (!configText.contains("[Interface]") && !configText.contains("Interface")) {
                     throw Exception("Invalid configuration data received from server")
                 }
 
+                // Core Logic: ကျလာသော Config စာသားထဲမှ Endpoint IP (ဥပမာ- 162.159.192.1) ကို ရှာဖွေပြီး ဖတ်ယူပါမည်
+                // generate.js ထဲက Endpoint logic အတိုင်း ကွက်တိ ပြန်ထုတ်ပေးမှာ ဖြစ်ပါတယ်
+                val matchResult = Regex("""Endpoint\s*=\s*([\d.]+):""").find(configText)
+                var filename = matchResult?.groups?.get(1)?.value ?: "162.159.192.13"
+                filename = filename.trim()
+
                 val tunnelConfig = com.wireguard.config.Config.parse(configText.reader().buffered())
+                
+                // တန်ဖိုးများကို မပြောင်းလဲဘဲ Generator ထဲက ထွက်လာသည့် IP နာမည်အတိုင်း တိုက်ရိုက် ဆောက်ပေးပါမည်
                 Application.getTunnelManager().create(filename, tunnelConfig)
                 showSnackbar("Config generated: $filename")
             } catch (e: Exception) {
