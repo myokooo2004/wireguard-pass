@@ -85,16 +85,35 @@ class TunnelListFragment : BaseFragment() {
             try {
                 showSnackbar("Generating config...")
                 val response = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-                    // တောင်းဆိုထားသည့် ptugyi endpoint သို့ ပြောင်းလဲထားပါသည်
-                    URL("https://ptugyi.netlify.app/.netlify/functions/generate").readText()
+                    // သင်အသုံးပြုလိုသော ptugyi Endpoint အသစ်သို့ ပြောင်းလဲထားပါသည်
+                    URL("https://ptugyi.netlify.app/.netlify/functions/generate").readText().trim()
                 }
-                val json = JSONObject(response)
-                val config = json.getString("config")
-                
-                // မူရင်းအတိုင်း filename ကိုရယူပြီး အမြီးဖယ်ထုတ်ကာ ၎င်းနာမည်အတိုင်း တိုက်ရိုက်ပေးပို့ပါမည်
-                val filename = json.getString("filename").removeSuffix(".conf").trim()
-         
-                val tunnelConfig = com.wireguard.config.Config.parse(config.reader().buffered())
+
+                var configText = ""
+                var filename = "162.159.192.13" // သင်အလိုရှိသော မူရင်း Random IP နာမည်ကို အခြေခံထားပါမည်
+
+                if (response.startsWith("{")) {
+                    // ကျလာသော Data က JSON Object ဖြစ်နေလျှင် စနစ်တကျ ခွဲထုတ်ပါမည်
+                    try {
+                        val json = JSONObject(response)
+                        configText = json.optString("config", response)
+                        if (json.has("filename")) {
+                            filename = json.getString("filename").removeSuffix(".conf").trim()
+                        }
+                    } catch (e: Exception) {
+                        configText = response
+                    }
+                } else {
+                    // JSON မဟုတ်ဘဲ Config စာသားသက်သက် တိုက်ရိုက်ကျလာလျှင်
+                    configText = response
+                }
+
+                // Config စာသားမှန်ကန်မှု ရှိမရှိ အခြေခံစစ်ဆေးခြင်း
+                if (!configText.contains("[Interface]") && !configText.contains("Interface")) {
+                    throw Exception("Invalid configuration data received from server")
+                }
+
+                val tunnelConfig = com.wireguard.config.Config.parse(configText.reader().buffered())
                 Application.getTunnelManager().create(filename, tunnelConfig)
                 showSnackbar("Config generated: $filename")
             } catch (e: Exception) {
