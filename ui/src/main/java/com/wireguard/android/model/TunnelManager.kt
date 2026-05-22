@@ -180,4 +180,81 @@ class TunnelManager(private val configStore: ConfigStore) : BaseObservable() {
         var throwable: Throwable? = null
         var newName: String? = null
         try {
-            if (originalState == Tunnel
+            if (originalState == Tunnel.State.UP)
+                withContext(Dispatchers.IO) { getBackend().setState(tunnel, Tunnel.State.DOWN, null) }
+            withContext(Dispatchers.IO) { configStore.rename(tunnel.name, name) }
+            newName = tunnel.onNameChanged(name)
+            if (originalState == Tunnel.State.UP)
+                withContext(Dispatchers.IO) { getBackend().setState(tunnel, Tunnel.State.UP, tunnel.config) }
+        } catch (e: Throwable) {
+            throwable = e
+            // On failure, we don't know what state the tunnel might be in. Fix that.
+            getTunnelState(tunnel)
+        }
+        // Add the tunnel back to the manager, under whatever name it thinks it has.
+        tunnelMap.add(tunnel)
+        if (wasLastUsed)
+            lastUsedTunnel = tunnel
+        if (throwable != null)
+            throw throwable
+        newName!!
+    }
+
+    suspend fun setTunnelState(tunnel: ObservableTunnel, state: Tunnel.State): Tunnel.State = withContext(Dispatchers.Main.immediate) {
+        var newState = tunnel.state
+        var throwable: Throwable? = null
+        try {
+            newState = withContext(Dispatchers.IO) { getBackend().setState(tunnel, state, tunnel.getConfigAsync()) }
+            if (newState == Tunnel.State.UP)
+                lastUsedTunnel = tunnel
+        } catch (e: Throwable) {
+            throwable = e
+        }
+        tunnel.onStateChanged(newState)
+        saveState()
+        if (throwable != null)
+            throw throwable
+        newState
+    }
+
+    class IntentReceiver : BroadcastReceiver() {
+        override fun onReceive(context: Context, intent: Intent?) {
+            applicationScope.launch {
+                val manager = getTunnelManager()
+                if (intent == null) return@launch
+                val action = intent.action ?: return@launch
+                if ("com.wireguard.android.action.REFRESH_TUNNEL_STATES" == action) {
+                    manager.refreshTunnelStates()
+                    return@launch
+                }
+                if (!UserKnobs.allowRemoteControlIntents.first())
+                    return@launch
+                val state = when (action) {
+                    "com.wireguard.android.action.SET_TUNNEL_UP" -> Tunnel.State.UP
+                    "com.wireguard.android.action.SET_TUNNEL_DOWN" -> Tunnel.State.DOWN
+                    else -> return@launch
+                }
+                val tunnelName = intent.getStringExtra("tunnel") ?: return@launch
+                val tunnels = manager.getTunnels()
+                val tunnel = tunnels[tunnelName] ?: return@launch
+                try {
+                    manager.setTunnelState(tunnel, state)
+                } catch (e: Throwable) {
+                    Toast.makeText(context, ErrorMessages[e], Toast.LENGTH_LONG).show()
+                }
+            }
+        }
+    }
+
+    suspend fun getTunnelState(tunnel: ObservableTunnel): Tunnel.State = withContext(Dispatchers.Main.immediate) {
+        tunnel.onStateChanged(withContext(Dispatchers.IO) { getBackend().getState(tunnel) })
+    }
+
+    suspend fun getTunnelStatistics(tunnel: ObservableTunnel): Statistics = withContext(Dispatchers.Main.immediate) {
+        tunnel.onStatisticsChanged(withContext(Dispatchers.IO) { getBackend().getStatistics(tunnel) })!!
+    }
+
+    companion object {
+        private const val TAG = "WireGuard/TunnelManager"
+    }
+}
