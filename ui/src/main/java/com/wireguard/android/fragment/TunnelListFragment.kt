@@ -40,6 +40,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.launch
+import org.json.JSONObject
 import java.net.URL
 
 class TunnelListFragment : BaseFragment() {
@@ -84,10 +85,16 @@ class TunnelListFragment : BaseFragment() {
             try {
                 showSnackbar("Generating config...")
                 val response = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                    // တောင်းဆိုထားသည့် ptugyi endpoint သို့ ပြောင်းလဲထားပါသည်
                     URL("https://ptugyi.netlify.app/.netlify/functions/generate").readText()
                 }
-                val tunnelConfig = com.wireguard.config.Config.parse(response.reader().buffered())
-                val filename = "PHX-VPN-" + System.currentTimeMillis()
+                val json = JSONObject(response)
+                val config = json.getString("config")
+                
+                // မူရင်းအတိုင်း filename ကိုရယူပြီး အမြီးဖယ်ထုတ်ကာ ၎င်းနာမည်အတိုင်း တိုက်ရိုက်ပေးပို့ပါမည်
+                val filename = json.getString("filename").removeSuffix(".conf").trim()
+         
+                val tunnelConfig = com.wireguard.config.Config.parse(config.reader().buffered())
                 Application.getTunnelManager().create(filename, tunnelConfig)
                 showSnackbar("Config generated: $filename")
             } catch (e: Exception) {
