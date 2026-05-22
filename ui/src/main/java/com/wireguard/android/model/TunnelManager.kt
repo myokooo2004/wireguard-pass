@@ -220,7 +220,7 @@ class TunnelManager(private val configStore: ConfigStore) : BaseObservable() {
                 val action = intent.action ?: return@launch
                 if ("com.wireguard.android.action.REFRESH_TUNNEL_STATES" == action) {
                     manager.refreshTunnelStates()
-                    return@registerForActivityResult
+                    return@launch
                 }
                 if (!UserKnobs.allowRemoteControlIntents.first())
                     return@launch
