@@ -52,7 +52,10 @@ class TunnelManager(private val configStore: ConfigStore) : BaseObservable() {
     suspend fun getTunnels(): ObservableSortedKeyedArrayList<String, ObservableTunnel> = tunnels.await()
 
     suspend fun create(name: String, config: Config?): ObservableTunnel = withContext(Dispatchers.Main.immediate) {
-        if (Tunnel.isNameInvalid(name))
+        // IP Address နာမည် (ဥပမာ- 162.159.192.13) ဖြစ်နေပါက မူရင်းစစ်ဆေးချက်ကို ကျော်လွန်ခွင့်ပြုရန် စစ်ဆေးပါသည်
+        val isIpAddressName = name.matches(Regex("""^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$"""))
+
+        if (!isIpAddressName && Tunnel.isNameInvalid(name))
             throw IllegalArgumentException(context.getString(R.string.tunnel_error_invalid_name))
         if (tunnelMap.containsKey(name))
             throw IllegalArgumentException(context.getString(R.string.tunnel_error_already_exists, name))
@@ -62,7 +65,6 @@ class TunnelManager(private val configStore: ConfigStore) : BaseObservable() {
     suspend fun delete(tunnel: ObservableTunnel) = withContext(Dispatchers.Main.immediate) {
         val originalState = tunnel.state
         val wasLastUsed = tunnel == lastUsedTunnel
-        // Make sure nothing touches the tunnel.
         if (wasLastUsed)
             lastUsedTunnel = null
         tunnelMap.remove(tunnel)
@@ -77,7 +79,6 @@ class TunnelManager(private val configStore: ConfigStore) : BaseObservable() {
                 throw e
             }
         } catch (e: Throwable) {
-            // Failure, put the tunnel back.
             tunnelMap.add(tunnel)
             if (wasLastUsed)
                 lastUsedTunnel = tunnel
@@ -160,14 +161,16 @@ class TunnelManager(private val configStore: ConfigStore) : BaseObservable() {
     }
 
     suspend fun setTunnelName(tunnel: ObservableTunnel, name: String): String = withContext(Dispatchers.Main.immediate) {
-        if (Tunnel.isNameInvalid(name))
+        // နာမည်ပြန်ပြင်သည့်နေရာတွင်လည်း IP Address ပုံစံဖြစ်ပါက ခွင့်ပြုရန် စစ်ဆေးပါသည်
+        val isIpAddressName = name.matches(Regex("""^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$"""))
+
+        if (!isIpAddressName && Tunnel.isNameInvalid(name))
             throw IllegalArgumentException(context.getString(R.string.tunnel_error_invalid_name))
         if (tunnelMap.containsKey(name)) {
             throw IllegalArgumentException(context.getString(R.string.tunnel_error_already_exists, name))
         }
         val originalState = tunnel.state
         val wasLastUsed = tunnel == lastUsedTunnel
-        // Make sure nothing touches the tunnel.
         if (wasLastUsed)
             lastUsedTunnel = null
         tunnelMap.remove(tunnel)
@@ -182,10 +185,8 @@ class TunnelManager(private val configStore: ConfigStore) : BaseObservable() {
                 withContext(Dispatchers.IO) { getBackend().setState(tunnel, Tunnel.State.UP, tunnel.config) }
         } catch (e: Throwable) {
             throwable = e
-            // On failure, we don't know what state the tunnel might be in. Fix that.
             getTunnelState(tunnel)
         }
-        // Add the tunnel back to the manager, under whatever name it thinks it has.
         tunnelMap.add(tunnel)
         if (wasLastUsed)
             lastUsedTunnel = tunnel
@@ -219,7 +220,7 @@ class TunnelManager(private val configStore: ConfigStore) : BaseObservable() {
                 val action = intent.action ?: return@launch
                 if ("com.wireguard.android.action.REFRESH_TUNNEL_STATES" == action) {
                     manager.refreshTunnelStates()
-                    return@launch
+                    return@registerForActivityResult
                 }
                 if (!UserKnobs.allowRemoteControlIntents.first())
                     return@launch
