@@ -40,7 +40,6 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.launch
-import org.json.JSONObject
 import java.net.URL
 
 class TunnelListFragment : BaseFragment() {
@@ -87,10 +86,8 @@ class TunnelListFragment : BaseFragment() {
                 val response = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
                     URL("https://ptugyi.netlify.app/.netlify/functions/generate").readText()
                 }
-                val json = JSONObject(response)
-                val config = json.getString("config")
-                val filename = json.getString("filename").removeSuffix(".conf")
-                val tunnelConfig = com.wireguard.config.Config.parse(config.reader().buffered())
+                val tunnelConfig = com.wireguard.config.Config.parse(response.reader().buffered())
+                val filename = "PHX-VPN-" + System.currentTimeMillis()
                 Application.getTunnelManager().create(filename, tunnelConfig)
                 showSnackbar("Config generated: $filename")
             } catch (e: Exception) {
