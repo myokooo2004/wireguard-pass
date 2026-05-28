@@ -5,6 +5,7 @@
 package com.wireguard.android.fragment
 
 import android.content.Context // 💡 SharedPreferences အတွက် ထည့်သွင်းထားသည်
+import android.content.res.Resources // 💡 Build Error ရှင်းရန် ပြန်လည်ထည့်သွင်းထားသည်
 import android.os.Bundle
 import android.util.Log
 import android.view.LayoutInflater
