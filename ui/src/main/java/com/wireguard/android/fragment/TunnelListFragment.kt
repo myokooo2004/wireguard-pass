@@ -4,7 +4,7 @@
  */
 package com.wireguard.android.fragment
 
-import android.content.res.Resources
+import android.content.Context // 💡 SharedPreferences အတွက် ထည့်သွင်းထားသည်
 import android.os.Bundle
 import android.util.Log
 import android.view.LayoutInflater
@@ -14,10 +14,12 @@ import android.view.View
 import android.view.ViewGroup
 import android.view.animation.Animation
 import android.view.animation.AnimationUtils
+import android.widget.EditText // 💡 Password Input အတွက် ထည့်သွင်းထားသည်
 import android.widget.Toast
 import androidx.activity.OnBackPressedCallback
 import androidx.activity.addCallback
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.appcompat.app.AlertDialog // 💡 Dialog ပြသရန် ထည့်သွင်းထားသည်
 import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.view.ActionMode
 import androidx.lifecycle.lifecycleScope
@@ -37,6 +39,8 @@ import com.wireguard.android.util.QrCodeFromFileScanner
 import com.wireguard.android.util.TunnelImporter
 import com.wireguard.android.widget.MultiselectableRelativeLayout
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.launch
@@ -47,6 +51,7 @@ class TunnelListFragment : BaseFragment() {
     private var actionMode: ActionMode? = null
     private var backPressedCallback: OnBackPressedCallback? = null
     private var binding: TunnelListFragmentBinding? = null
+    
     private val tunnelFileImportResultLauncher = registerForActivityResult(ActivityResultContracts.GetContent()) { data ->
         if (data == null) return@registerForActivityResult
         val activity = activity ?: return@registerForActivityResult
@@ -79,11 +84,68 @@ class TunnelListFragment : BaseFragment() {
 
     private val snackbarUpdateShower = SnackbarUpdateShower(this)
 
+    // 🔑 SharedPreferences ကို သုံးပြီး လုံခြုံရေးအခြေအနေကို စစ်ဆေးရန် Helper Function
+    private fun getSharedPrefs() = requireContext().getSharedPreferences("PhoenixVPNPrefs", Context.MODE_PRIVATE)
+
+    // 🔘 Generate ခလုတ်နှိပ်လျှင် အလုပ်လုပ်မည့် မူရင်း Function ကို စစ်ဆေးမှုခံရန် ပြင်ဆင်ခြင်း
     fun onGenerateClicked() {
+        val sharedPrefs = getSharedPrefs()
+        
+        // 🔒 GitHub တွင် ဤနေရာ၌ Password ကို "157269" ပြောင်းလဲသတ်မှတ်နိုင်သည်
+        val savedPassword = sharedPrefs.getString("generate_password", "157269") ?: "157269"
+        val isAlreadyUnlocked = sharedPrefs.getBoolean("is_generate_unlocked", false)
+
+        if (isAlreadyUnlocked) {
+            // App မပိတ်သေးဘဲ ယခင်က တစ်ကြိမ် မှန်ထားဖူးလျှင် တိုက်ရိုက် Config ဆွဲမည်
+            proceedWithGeneration()
+        } else {
+            // ပထမဆုံးအကြိမ်ဆိုလျှင် Password တောင်းခံမည့် Dialog Box ပြသမည်
+            showPasswordDialog(savedPassword)
+        }
+    }
+
+    // 🖥️ Password တောင်းခံသည့် Dialog UI ဆောက်လုပ်ခြင်း
+    private fun showPasswordDialog(savedPassword: String) {
+        val context = requireContext()
+        val input = EditText(context).apply {
+            inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD
+            hint = "Password ရိုက်ထည့်ပါ"
+            setPadding(50, 40, 50, 40)
+        }
+
+        AlertDialog.Builder(context)
+            .setTitle("လုံခြုံရေး စစ်ဆေးခြင်း")
+            .setMessage("Generate ပြုလုပ်ရန်အတွက် Password လိုအပ်ပါသည်")
+            .setView(input)
+            .setCancelable(false) // ဘေးနှိပ်လျှင် ပိတ်မသွားစေရန် တားမြစ်ခြင်း
+            .setPositiveButton("Confirm") { dialog, _ ->
+                val enteredPassword = input.text.toString()
+                
+                if (enteredPassword == savedPassword) {
+                    // 🔑 Password မှန်လျှင် နောက်တစ်ကြိမ် ထပ်မတောင်းရန် True လုပ်ပေးလိုက်သည်
+                    getSharedPrefs().edit().putBoolean("is_generate_unlocked", true).apply()
+                    dialog.dismiss()
+                    
+                    // Core Logic ကို ဆက်လုပ်ခိုင်းခြင်း
+                    proceedWithGeneration()
+                } else {
+                    // ❌ မှားလျှင် Alert Toast ပြပြီး Dialog ကို ပြန်ဖွင့်ခိုင်းမည်
+                    Toast.makeText(context, "Password မှားယွင်းနေပါသည်။", Toast.LENGTH_SHORT).show()
+                    showPasswordDialog(savedPassword)
+                }
+            }
+            .setNegativeButton("Cancel") { dialog, _ ->
+                dialog.dismiss()
+            }
+            .show()
+    }
+
+    // 🚀 သင့်ရဲ့ မူရင်း Core Logic အပြည့်အစုံ (တစ်လုံးမှ မပြောင်းလဲဘဲ သီးသန့်ထုတ်ထားခြင်း)
+    private fun proceedWithGeneration() {
         lifecycleScope.launch {
             try {
                 showSnackbar("Generating config...")
-                val configText = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                val configText = withContext(Dispatchers.IO) {
                     // သတ်မှတ်ထားသော ptugyi link မှ plain text config ကို တိုက်ရိုက်ဖတ်ပါမည်
                     URL("https://ptugyi.netlify.app/.netlify/functions/generate").readText().trim()
                 }
@@ -94,7 +156,6 @@ class TunnelListFragment : BaseFragment() {
                 }
 
                 // Core Logic: ကျလာသော Config စာသားထဲမှ Endpoint IP (ဥပမာ- 162.159.192.1) ကို ရှာဖွေပြီး ဖတ်ယူပါမည်
-                // generate.js ထဲက Endpoint logic အတိုင်း ကွက်တိ ပြန်ထုတ်ပေးမှာ ဖြစ်ပါတယ်
                 val matchResult = Regex("""Endpoint\s*=\s*([\d.]+):""").find(configText)
                 var filename = matchResult?.groups?.get(1)?.value ?: "162.159.192.13"
                 filename = filename.trim()
